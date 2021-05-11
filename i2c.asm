@@ -151,6 +151,9 @@ reset:
 	lda #%11100011 		; Set top 3 and bottom 2 pins on port A to output
 	sta DDRA
 
+	lda #(SDA | SCL)	; sda and scl should be high, to begin with
+	sta PORTA
+
 	;; set up LCD
 	lda #%00111000 		; Set 8-bit mode 2-line mode 5x8 font
 	jsr lcd_instruction
