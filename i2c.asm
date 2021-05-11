@@ -1,12 +1,12 @@
-PORTB = $6000 
+PORTB = $6000
 PORTA = $6001
 DDRB = $6002
 DDRA = $6003
 T2CL = 6008
 T2CH = 6009
 SR = $600a
-ACR = $600b	
-PCR = $600c	
+ACR = $600b
+PCR = $600c
 IFR = $600d
 IER = $600e
 
@@ -19,7 +19,7 @@ SDA = %00000010
 
 TS_ADDR = %00001100
 I2C_R = %10000000
-	
+
 counter = $0200 		; bytes
 
 	.org $8000
@@ -41,7 +41,7 @@ lcd_busy:
 	lda #%11111111 		; Set all pins on port B to output
 	sta DDRB
 	pla
-	rts	
+	rts
 
 lcd_instruction:
 	jsr lcd_wait
@@ -63,6 +63,11 @@ print_char:
 	sta PORTA		; set enable to bit to send command to LCD
 	lda #RS
 	sta PORTA
+	rts
+
+print_hex:
+
+	pha
 	rts
 
 i2c_start:
@@ -93,10 +98,10 @@ i2c_send:
 	and #1
 	asl a
 	sta PORTA 		; data high/low, clock low
-	
+
 	ora #SCL
 	sta PORTA		; clock high
-	
+
 	eor #SCL
 	sta PORTA		; clock low
 
@@ -133,6 +138,21 @@ i2c_read_more:
 	dex
 	bne i2c_read_more
 	pla			; pull result from stack into a
+	rts
+
+i2c_ack:
+	lda #%11100001		; set SDA to input
+	sta DDRA
+
+	ldx #1			; read one bit, shifted into a
+	lda #0
+	jsr i2c_read
+	pha 			; save the value
+
+	lda #%11100011		; set SDA back to output
+	sta DDRA
+
+	pla 			; result should be zero if we received an ACK
 	rts
 
 reset:
@@ -174,46 +194,87 @@ print_prompt:
 	jmp print_prompt
 done_print:
 
-;;; Try to get I2C slave to ack
+;;; read temperature
 	jsr i2c_start
 
 	ldx #8
 	lda #(TS_ADDR)	; send slave address and enable write
 	jsr i2c_send
 
+	jsr i2c_ack
+	bne noack
+
+	lda #"A"
+	jsr print_char		; acknowledge register set
+
+	ldx #8
+	lda #$05		; write address of temperature register
+	jsr i2c_send
+
+	jsr i2c_ack
+	bne noack
+
+	lda #"R"
+	jsr print_char		; acknowledge register set
+
+	jsr i2c_start
+
+	ldx #8
+	lda #(TS_ADDR | I2C_R) 		; start read
+	jsr i2c_send
+
+	jsr i2c_ack
+	bne noack
+
+	lda #"A"
+	jsr print_char		; acknowledge address and enable read
+
 	lda #%11100001		; set SDA to input
 	sta DDRA
 
-	ldx #1			; read one bit, shifted into a
+	ldx #8
 	lda #0
-	jsr i2c_read
-	pha 			; save the value
+	jsr i2c_read		; read 8 bits from i2c
+	pha
 
-	lda #%11100011		; set SDA back to output
+	lda #%11100011		; set SDA to output
 	sta DDRA
 
-	pla 			; result should be zero if we received an ACK
-	bne noack
-	lda #"A"		; print A for acknowledge
+	ldx #1
+	lda #1
+	jsr i2c_send 		; send ack
 
-	ldx #8
-	lda #%11111111		; set temperature register
-	jsr i2c_send
+	pla
+	jsr print_hex
 
-	
-	
-
-
-	jsr print_char
 noack:
 	lda #"."		; print that i2c finished
 	jsr print_char
-loop:	
+loop:
 	jmp loop
 
 message:
 	;; 0-40 char first line, 41-80 second line
 	.asciiz ">> "
+
+hextable:
+	.byte 30
+	.byte 31
+	.byte 32
+	.byte 33
+	.byte 34
+	.byte 35
+	.byte 36
+	.byte 37
+	.byte 38
+	.byte 39
+	.byte 41
+	.byte 42
+	.byte 43
+	.byte 44
+	.byte 45
+	.byte 46
+
 
 nmi:
 irq:
