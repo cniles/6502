@@ -97,6 +97,7 @@ i2c_start:
 i2c_stop:
 	;; send stop condition
 	lda #(SCL)		; clock high
+	nop
 	sta PORTA
 	lda #(SCL | SDA)	; clock high; data high
 	sta PORTA
@@ -168,46 +169,71 @@ i2c_ack:
 	pla 			; result should be zero if we received an ACK
 	rts
 
-reset:
-	ldx  #$ff 		; initialize stack pointer
-	txs
-	cli 			; enable interrupts
 
-	lda #$82 		; set up interrupt control on interface controller
-	sta IER
-	lda #$00
-	sta PCR
-
-	;; set up interface controller for lcd
-	lda #%11111111 		; Set all pins on port B to output
-	sta DDRB
-	lda #%11100011 		; Set top 3 and bottom 2 pins on port A to output
+mcp9808_wake:
+	lda #%1110011
 	sta DDRA
 
-	lda #(SDA | SCL)	; sda and scl should be high, to begin with
-	sta PORTA
+	jsr i2c_start
 
-	;; set up LCD
-	lda #%00111000 		; Set 8-bit mode 2-line mode 5x8 font
-	jsr lcd_instruction
-	lda #%00001110 		; Display on; cursor on; blink off
-	jsr lcd_instruction
-	lda #%00000110 		; Increment and shift cursor; don't shift display
-	jsr lcd_instruction
+	ldx #8
+	lda #(TS_ADDR)
+	jsr i2c_send
 
-	lda #%00000001
-	jsr lcd_instruction
+	jsr i2c_ack
+	bne noack_wake
 
-	ldx 0
+	ldx #8
+	lda #CR
+	jsr i2c_send
+
+	jsr i2c_ack
+	bne noack_wake
+
+	ldx #8
+	lda #0
+	jsr i2c_send
+
+	jsr i2c_ack
+	bne noack_wake
+
+	ldx #8
+	lda #0
+	jsr i2c_send
+
+	jsr i2c_ack
+	bne noack_wake
+
+	jsr i2c_stop
+
+	lda #"w"
+	jsr print_char
+noack_wake:
+	lda #"."
+	jsr print_char
+
+	lda #%1110000
+	sta DDRA
+	rts
+
 print_prompt:
-	lda message,x
+	lda #%00000001		; clear screen
+	jsr lcd_instruction
+	ldx 0
+next_char:
+	lda prompt,x
 	beq done_print
 	jsr print_char
 	inx
-	jmp print_prompt
+	jmp next_char
 done_print:
+	rts
 
-;;; read temperature
+;;;  Read temperature from I2C device and write result to lcd
+print_temp:
+	lda #%1110011
+	sta DDRA
+
 	jsr i2c_start
 
 	ldx #8
@@ -217,19 +243,14 @@ done_print:
 	jsr i2c_ack
 	bne noack
 
-	lda #"A"
-	jsr print_char		; acknowledge register set
-
 	ldx #8
-	lda #$05		; write address of temperature register
+	lda #ATR		; write address of temp register
 	jsr i2c_send
 
 	jsr i2c_ack
 	bne noack
 
-	lda #"R"
-	jsr print_char		; acknowledge register set
-
+	jsr i2c_stop
 	jsr i2c_start
 
 	ldx #8
@@ -238,9 +259,6 @@ done_print:
 
 	jsr i2c_ack
 	bne noack
-
-	lda #"A"
-	jsr print_char		; acknowledge address and enable read
 
 	lda #%11100001		; set SDA to input
 	sta DDRA
@@ -254,8 +272,28 @@ done_print:
 	sta DDRA
 
 	ldx #1
-	lda #1
+	lda #0
 	jsr i2c_send 		; send ack
+
+	pla
+	jsr print_hex
+	
+	lda #%11100001		; set SDA to input
+	sta DDRA
+
+	ldx #8
+	lda #0
+	jsr i2c_read		; read 8 bits from i2c
+	pha
+
+	lda #%11100011		; set SDA to output
+	sta DDRA
+
+	ldx #1
+	lda #1
+	jsr i2c_send 		; send NAK
+
+	jsr i2c_stop
 
 	pla
 	jsr print_hex
@@ -263,36 +301,53 @@ done_print:
 noack:
 	lda #"."		; print that i2c finished
 	jsr print_char
+	lda #%1110000
+	sta DDRA
+	rts
+
+reset:
+	ldx  #$ff 		; initialize stack pointer
+	txs
+	cli 			; enable interrupts
+
+	lda #$82 		; set up interrupt control on interface controller
+	sta IER
+	lda #$00
+	sta PCR
+
+	;; set up interface controller ports
+	lda #%11111111 		; Set all pins on port B to output
+	sta DDRB
+	lda #%11100000 		;
+	sta DDRA
+
+	lda #(SDA | SCL)	; sda and scl should be high, to begin with
+	sta PORTA
+
+	;; set up LCD
+	lda #%00111000 		; Set 8-bit mode 2-line mode 5x8 font
+	jsr lcd_instruction
+	lda #%00001110 		; Display on; cursor on; blink off
+	jsr lcd_instruction
+	lda #%00000110 		; Increment and shift cursor; don't shift display
+	jsr lcd_instruction
+
+	jsr print_prompt
+	jsr mcp9808_wake
 loop:
 	jmp loop
 
-message:
+prompt:
 	;; 0-40 char first line, 41-80 second line
 	.asciiz ">> "
 
 hextable:
-	.byte 30
-	.byte 31
-	.byte 32
-	.byte 33
-	.byte 34
-	.byte 35
-	.byte 36
-	.byte 37
-	.byte 38
-	.byte 39
-	.byte 41
-	.byte 42
-	.byte 43
-	.byte 44
-	.byte 45
-	.byte 46
-
+	.asciiz "0123456789ABCDEF"
 
 nmi:
 irq:
-	lda #"!"
-	jsr print_char
+ 	jsr print_temp
+
 	bit PORTA
 	rti
 
