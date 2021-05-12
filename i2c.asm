@@ -56,6 +56,22 @@ lcd_instruction:
 	sta PORTA
 	rts
 
+print_hex:
+	pha
+	lsr
+	lsr
+	lsr
+	lsr
+	tax
+	lda hextable,x
+	jsr print_char
+	pla
+	and #$0f
+	tax
+	lda hextable,x
+	jsr print_char
+	rts
+
 print_char:
 	jsr lcd_wait
 	sta PORTB
@@ -65,11 +81,6 @@ print_char:
 	sta PORTA		; set enable to bit to send command to LCD
 	lda #RS
 	sta PORTA
-	rts
-
-print_hex:
-
-	pha
 	rts
 
 i2c_start:
