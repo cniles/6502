@@ -1,3 +1,22 @@
+;;            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+;;                    Version 2, December 2004
+
+;; Copyright (C) 2004 Craig Niles <niles.c@gmail.com >
+
+;; Everyone is permitted to copy and distribute verbatim or modified
+;; copies of this license document, and changing it is allowed as long
+;; as the name is changed.
+
+;;            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+;;   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+;;  0. You just DO WHAT THE FUCK YOU WANT TO.
+
+;; Code for somewhat custom 6502 hardware.  Implements an I2C bus (i.e. bit-bangs) using 65C22 and uses that to
+;; communicate with an MPC9808 temperature sensor. On startup, the LCD is configured and the MCP9808 woken up.
+;; When an interrupt is triggered, e.g. via button press, the temperature (measured in celcius) is read and printed
+;; to the display in decimal format.
+
 PORTB = $6000
 PORTA = $6001
 DDRB = $6002
@@ -22,9 +41,68 @@ I2C_R = %10000000
 ATR = %10100000
 CR = %10000000
 
-tmp = $0010
+tmp = $0010			; 2 bytes
+value = $0200			; 2 bytes
+divisor = $0202			; 2 bytes
+mod10 = $0204			; 2 bytes
+chrbuf = $0206			; 6 bytes
 
-	.org $8000
+ 	.org $8000
+
+print_dec:
+	lda #10
+	ldx #0
+	sta divisor
+div10:	jsr divide
+	lda mod10
+	clc
+	adc #"0"
+	pha
+	inx
+	lda value
+	ora value + 1
+	bne div10
+printloop:
+	pla
+	jsr print_char
+	dex
+	bne printloop
+
+	rts
+
+;;; 16x8 division
+;;; dividend and result are stored in value.  the divisor is stored in divisor
+divide:
+	phx
+	lda #0
+	sta mod10
+	sta mod10 + 1
+	clc
+
+	ldx #16
+divloop:
+	rol value
+	rol value + 1
+	rol mod10
+	rol mod10 + 1
+
+	sec
+	lda mod10
+	sbc divisor
+	tay
+	lda mod10 + 1
+	sbc #0
+	bcc ignore_result
+	sty mod10
+	sta mod10 + 1
+
+ignore_result:
+	dex
+	bne divloop
+	rol value
+	rol value + 1
+	plx
+	rts
 
 lcd_wait:
 	pha
@@ -169,7 +247,6 @@ i2c_ack:
 	pla 			; result should be zero if we received an ACK
 	rts
 
-
 mcp9808_wake:
 	lda #%11100011
 	sta DDRA
@@ -206,11 +283,7 @@ mcp9808_wake:
 
 	jsr i2c_stop
 
-	lda #"w"
-	jsr print_char
 noack_wake:
-	lda #"."
-	jsr print_char
 
 	lda #%11100000
 	sta DDRA
@@ -312,10 +385,16 @@ print_temp:
 	cld
 	clc
 	adc tmp			; add the results
-	jsr print_hex
+
+	sta value		; store in value
+
+	lda #0
+	sta value + 1
+
+	jsr print_dec
 
 noack:
-	lda #"."		; print that i2c finished
+	lda #"c"		; print c
 	jsr print_char
 	lda #%11100000
 	sta DDRA
@@ -350,8 +429,11 @@ reset:
 
 	jsr print_prompt
 	jsr mcp9808_wake
+
 loop:
 	jmp loop
+
+number:	 .word 1729
 
 prompt:
 	;; 0-40 char first line, 41-80 second line
