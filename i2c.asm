@@ -22,7 +22,7 @@ I2C_R = %10000000
 ATR = %10100000
 CR = %10000000
 
-counter = $0200 		; bytes
+tmp = $0010
 
 	.org $8000
 
@@ -231,6 +231,9 @@ done_print:
 
 ;;;  Read temperature from I2C device and write result to lcd
 print_temp:
+	lda #(SDA | SCL)
+	sta PORTA
+
 	lda #%11100011
 	sta DDRA
 
@@ -275,9 +278,6 @@ print_temp:
 	lda #0
 	jsr i2c_send 		; send ack
 
-	pla
-	jsr print_hex
-	
 	lda #%11100001		; set SDA to input
 	sta DDRA
 
@@ -296,6 +296,22 @@ print_temp:
 	jsr i2c_stop
 
 	pla
+	lsr 			; divide by 16
+	lsr
+	lsr
+	lsr
+	sta tmp
+
+	pla
+	and #$1f		; clear flags
+	asl			;  multiply by 16
+	asl
+	asl
+	asl
+
+	cld
+	clc
+	adc tmp			; add the results
 	jsr print_hex
 
 noack:
@@ -347,8 +363,7 @@ hextable:
 nmi:
 irq:
 	jsr print_prompt
-
- 	jsr print_temp
+	jsr print_temp
 
 	bit PORTA
 	rti
