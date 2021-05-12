@@ -171,7 +171,7 @@ i2c_ack:
 
 
 mcp9808_wake:
-	lda #%1110011
+	lda #%11100011
 	sta DDRA
 
 	jsr i2c_start
@@ -212,7 +212,7 @@ noack_wake:
 	lda #"."
 	jsr print_char
 
-	lda #%1110000
+	lda #%11100000
 	sta DDRA
 	rts
 
@@ -231,7 +231,7 @@ done_print:
 
 ;;;  Read temperature from I2C device and write result to lcd
 print_temp:
-	lda #%1110011
+	lda #%11100011
 	sta DDRA
 
 	jsr i2c_start
@@ -301,7 +301,7 @@ print_temp:
 noack:
 	lda #"."		; print that i2c finished
 	jsr print_char
-	lda #%1110000
+	lda #%11100000
 	sta DDRA
 	rts
 
@@ -346,6 +346,8 @@ hextable:
 
 nmi:
 irq:
+	jsr print_prompt
+
  	jsr print_temp
 
 	bit PORTA
