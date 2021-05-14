@@ -21,6 +21,10 @@ PORTB = $6000
 PORTA = $6001
 DDRB = $6002
 DDRA = $6003
+T1CL = $6004
+T1CH = $6005
+T1LL = $6006
+T1LH = $6007
 T2CL = 6008
 T2CH = 6009
 SR = $600a
@@ -46,8 +50,12 @@ value = $0200			; 2 bytes
 divisor = $0202			; 2 bytes
 mod10 = $0204			; 2 bytes
 chrbuf = $0206			; 6 bytes
+time_counter = $020c		; 1 byte
+time = $020d			; 1 byte
 
  	.org $8000
+
+inc_time:
 
 print_dec:
 	lda #10
@@ -405,7 +413,7 @@ reset:
 	txs
 	cli 			; enable interrupts
 
-	lda #$82 		; set up interrupt control on interface controller
+	lda #$c2 		; set up interrupt control on interface controller
 	sta IER
 	lda #$00
 	sta PCR
@@ -430,6 +438,17 @@ reset:
 	jsr print_prompt
 	jsr mcp9808_wake
 
+	stz time
+	lda #20
+	sta time_counter
+	lda #%01000000
+	sta ACR
+	lda #$50		; set T1 timer latch and counter to 50,000
+	sta T1CL
+	lda #$C3
+	sta T1LH
+	sta T1CH
+
 loop:
 	jmp loop
 
@@ -444,10 +463,21 @@ hextable:
 
 nmi:
 irq:
+	dec time_counter
+	bne cont
+	lda #20
+	sta time_counter
+	inc time
 	jsr print_prompt
 	jsr print_temp
 
+	lda time
+	sta value
+	stz value + 1
+	jsr print_dec
+cont:
 	bit PORTA
+	bit T1CL
 	rti
 
 	.org $fffa
